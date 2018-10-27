@@ -1,87 +1,215 @@
 <?php
-function cURL($url,$post=false) {
-	if($post) {
-		$post = json_encode($post);
-	}
-//	echo "<pre>";
-//	print_r ($post);
-//	echo "</pre>";
-//	die();
-	$url_self = 'http';
-	if ($_SERVER["HTTPS"] == "on") {
-		$url_self .= "s";
-	}
-	$url_self .= "://" . $_SERVER["SERVER_NAME"];
-	if ($_SERVER["SERVER_PORT"] != "80") {
-		$url_self .= ":" . $_SERVER["SERVER_PORT"];
+include_once "db.php";
+
+class ajaxClass
+{
+	private $db;
+
+	public function __construct($db) {
+		$this->db = $db;
 	}
 
-	if (substr($url_self, -1) != '/') {
-		$url_self = $url_self . '/';
+	public function queryDateDb() {
+
+//		$_POST['to_date'] = "2017-01-01";
+//		$_POST['past_date'] = "2018-01-01";
+//		$_POST['currency_id'] = "R01235";
+
+		$response = array();
+		$arr_param = array(
+			'to_date' => $_POST['to_date'],
+			'past_date' => $_POST['past_date'],
+			'currency_id' => $_POST['currency_id']
+		);
+
+		$query_count = $this->db->prepare('SELECT count(d.`id`) as `num` FROM `sys_dynamic_current_date` as d JOIN `sys_library` as l on l.id = d.`id_library` WHERE d.`date` >= :to_date AND d.`date` <= :past_date AND d.`id_library` =:currency_id ORDER BY d.`date`');
+		$query_count->execute($arr_param);
+		$result_count = $query_count->fetch(PDO::FETCH_OBJ);
+		$total_e = $result_count->num;
+
+		if ($_POST['count_record'] == 0) {
+			$_POST['count_record'] = $total_e;
+		}
+
+
+		if ($total_e > $_POST['count_record']) {
+			$arr_pagination = $this->pagination($total_e, $_POST['count_record'], $_POST['page'], $_POST['page_a']);
+			$arr_param['page'] = 0;
+			if($_POST['page']) {
+				$arr_param['page'] = ($_POST['page'] - 1) * $_POST['count_record'];
+			}
+			$arr_param['count_record'] = $_POST['count_record'];
+			$response["pagination"] = $arr_pagination['view'];
+		} else {
+			$arr_param['page'] = 0;
+			$arr_param['count_record'] = $_POST['count_record'];
+			$response["pagination"] = "";
+		}
+
+		$query = $this->db->prepare('SELECT * FROM `sys_dynamic_current_date` as d JOIN `sys_library` as l on l.id = d.`id_library` WHERE d.`date` >= :to_date AND d.`date` <= :past_date AND d.`id_library` =:currency_id ORDER BY d.`date` LIMIT :page,:count_record');
+		$query->execute($arr_param);
+		$result = $query->fetchAll(PDO::FETCH_OBJ);
+		$tbl = '<hr/><table class="table table-hover"  id="tbl_currenty">
+						<thead>
+                            <tr>
+                                <td>Дата</td>
+                                <td>Наминал</td>
+                                <td>Курс</td>
+                            </tr>
+                        </thead>
+                        <tbody>';
+		$gr ="";
+		foreach ($result as $e) {
+			$tbl .= ' <tr>
+                        <td>' . $e->date . '</td>
+                        <td>' . $e->nominal . '</td>
+                        <td>' . $e->value . '</td>
+                     </tr>';
+			$gr .="{ year: '".$e->date ."', value:".$e->value ."}," ;
+		}
+		$tbl .= '</tbody></table>';
+		$response["tbl"] = $tbl;
+		$response["gr"] = '<div id="myfirstchart" style="height: 250px;">
+                        <script>
+                            new Morris.Line({
+                                // ID of the element in which to draw the chart.
+                                element: \'myfirstchart\',
+                                // Chart data records -- each entry in this array corresponds to a point on
+                                // the chart.
+                                data: [
+                                    '.$gr.'
+                                ],
+                                // The name of the data record attribute that contains x-values.
+                                xkey: \'year\',
+                                // A list of names of data record attributes that contain y-values.
+                                ykeys: [\'value\'],
+                                // Labels for the ykeys -- will be displayed when you hover over the
+                                // chart.
+                                labels: [\'Value\']
+                            });
+                        </script>
+                    </div>';
+
+		echo json_encode($response);
 	}
 
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, $url);
-//    curl_setopt($ch, CURLOPT_HTTPHEADER, array('company_key: 750fd2bd-78a5-4166-b761-691f90d885b1'));
-	curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-	curl_setopt($ch, CURLOPT_USERAGENT, $_SERVER['HTTP_USER_AGENT']);
-	curl_setopt($ch, CURLOPT_REFERER, $url_self);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+	private function pagination($total_count, $count_record, $page, $page_a) {
+//		echo $page;
+//		die;
+		$default_page = 5;// количество цифр на вкладке пагинации
+		$new_page = 1;
+		$end_page = $default_page;
+		$next = false;
+		$previous = false;
 
-	if ($post) {
-		curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-		curl_setopt($ch, CURLOPT_POST, 1);
-		curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
+		if ($page) {
+			switch ($page_a) {
+				case "next":
+					$next = true;
+					break;
+				case "previous":
+					$previous = true;
+					break;
+			}
+		}
+		if ($page == 0 || $page == "") {
+			$page = 1;
+		}
+
+		$count_list = ceil($total_count / $count_record);
+		if ($count_list > 1 && $count_list <= $default_page) {
+			$end_page = $count_list;
+			$class_disabled_previous = 'class="disabled"';
+			$class_disabled_next = 'class="disabled"';
+		} else {
+			for ($z = 1; $z <= ceil($count_list / $default_page); $z++) {
+				if ($page <= $z * $default_page) {
+					$end_page = $z * $default_page;
+					if ($end_page <= $count_list) {
+						$new_page = $end_page - ($default_page - 1);
+						if ($end_page == $count_list) {
+							$class_disabled_next = 'class="disabled"';
+						}
+						break;
+					} else {
+						$new_page = $end_page - ($default_page - 1);
+						$end_page = $count_list;
+						$class_disabled_next = 'class="disabled"';
+					}
+				}
+			}
+		}
+		if ($next) {
+			$new_page = $page + 1;
+			$end_page = $new_page + ($default_page - 1);
+			if ($end_page >= $count_list) {
+				$class_disabled_next = 'class="disabled"';
+				$new_page = $count_list - ($default_page - 1);
+				$end_page = $count_list;
+			}
+			$page = $page + 1;
+			if ($page > $count_list) {
+				$page = $count_list;
+			}
+		}
+
+		if ($previous) {
+			$end_page = $page - 1;
+			$new_page = $end_page - $default_page;
+			$page = $page - 1;
+			if ($new_page <= 0) {
+				$new_page = 1;
+				$page = 1;
+				if ($count_list < $default_page) {
+					$end_page = $count_list;
+				} else {
+					$end_page = $default_page;
+				}
+			}
+		}
+
+		if ($new_page == 0) {
+			$new_page = 1;
+			$class_disabled_previous = 'class="disabled"';
+		} else {
+			if ($new_page - $default_page <= 0) {
+				$class_disabled_previous = 'class="disabled"';
+			}
+		}
+
+
+		$viewList = "";
+		for ($i = $new_page; $i <= $end_page; $i++) {
+			$viewList .= '<li class="' . ($page == $i ? "active" : "") . '"><a href="#">' . $i . '</a></li>';
+		}
+
+		$view = '<div class="col-xs-12 col-md-8 marg_top_30 jsPagination">
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination">
+                            <li  ' . $class_disabled_previous . '>
+                                <a href="#" aria-label="Previous" data-act="Previous">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+                            ' . $viewList . '
+                            <li ' . $class_disabled_next . '>
+                                <a href="#" aria-label="Next" data-act="Next">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>';
+
+		return array(
+			'view' => $view,
+		);
 	}
 
-	$result = curl_exec($ch);
 
-//	echo "<pre>";
-//	print_r ($result);
-//	echo "</pre>";
-//	die();
+}//end classa
 
-	$error = curl_error($ch);
-	if ($error) {
-		$result['curl_error'] = $error;
-		return $result;
-	}
-
-	curl_close($ch);
-	if ($result) {
-		return $result;
-	} else {
-		return false;
-	}
-}
-
-//print_r( cURL("https://ya.ru/"))
-if($_POST['reg']){
-	$log = $_POST['log'];
-	$pas = $_POST['pas'];
-//	if()
-
-//	unset($_POST['reg']);
-//	unset($_POST['log']);
-//	unset($_POST['pas']);
-
-	$_POST['data'] = array(
-		"app_key"=>"22ca6325-fe62-4925-b6ed-2aab38f19640",
-		"company_key"=>"750fd2bd-78a5-4166-b761-691f90d885b1",
-		"device_id"=>"app_test_api",
-		"is_debug"=>true,
-		"locale"=>"en",
-		"login"=>"test_pos_01",
-//		"login"=>$log,
-		"password"=>"8D969EEF6ECAD3C29A3A629280E686CF0C3F5D5A86AFF3CA12020C923ADC6C92",
-		"timeout"=>300,
-	);
-	$_POST["method"] = "auth.login";
-	$_POST["sid"] = "00000000-0000-0000-0000-000000000000";
-	$_POST["ts"] = 1530694432;
-
-
-
-	  echo cURL($_POST);
+$ajax = new ajaxClass($db);
+if (method_exists($ajax, $_REQUEST['ajax'])) {
+	$ajax->{$_REQUEST['ajax']}();
 }

@@ -55,22 +55,67 @@ function cURL($url, $post = false) {
 function currency_library($db) {
 	$currency_library = cURL("http://www.cbr.ru/scripts/XML_val.asp?d=0");
 	$xml = simplexml_load_string($currency_library);
-	foreach ($xml as $e) {
-		$query = $db->prepare("INSERT INTO library SET
-		sys_id=:sys_id,
-		sys_name=:sys_name,
-		sys_eng_name=:sys_eng_name,
-		sys_nominal=:sys_nominal
+
+	foreach ($xml->Item as $e) {
+		$query = $db->prepare("INSERT INTO `sys_library` SET
+		`id`=:id,
+		`name`=:name,
+		`eng_name`=:eng_name,
+		`nominal`=:nominal
 		");
 		$query->execute(array(
-			'sys_id' => (string)$e->ParentCode,
-			'sys_name' => (string)$e->Name,
-			'sys_eng_name' => (string)$e->EngName,
-			'sys_nominal' => (int)$e->Nominal
+			'id' => (string)$e->attributes()->ID,
+			'name' => (string)$e->Name,
+			'eng_name' => (string)$e->EngName,
+			'nominal' => (int)$e->Nominal
 		));
 	}
 }
 
 //currency_library($db);
+
+/**
+ * получения динамики котировок валют
+ * @param $db
+ */
+
+function query_date_currency($db) {
+	$query = $db->prepare("SELECT `id` FROM `sys_library` ");
+	$query->execute();
+	$result = $query->fetchAll(PDO::FETCH_OBJ);
+
+	foreach ($result as $e) {
+		$url = trim("http://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=01/01/2017&date_req2=31/12/2018&VAL_NM_RQ=" . $e->id);
+		$currency_library = cURL($url);
+		$xml = simplexml_load_string($currency_library);
+
+		foreach ($xml->Record as $e) {
+			$query = $db->prepare("INSERT INTO sys_dynamic_current_date SET		
+									`id_library`=:id_library,
+									`date`=:date,
+									`value`=:value,
+									`nominal`=:nominal");
+
+			list($d, $m, $y) = explode(".", (string)$e->attributes()->Date);
+			$date = $y . "-" . $m . "-" . $d;
+
+			list($int, $float) = explode(",", (string)$e->Value);
+			$value = $int + $float / pow(10, strlen($float));
+
+			try {
+				$query->execute(array(
+					'id_library' => (string)$e->attributes()->Id,
+					'date' => $date,
+					'value' => $value,
+					'nominal' => (int)$e->Nominal
+				));
+			} catch (PDOException $e) {
+				continue;
+			}
+		}
+	}
+}
+
+query_date_currency($db);
 
 echo "end <br/>";
