@@ -9,6 +9,9 @@ class ajaxClass
 		$this->db = $db;
 	}
 
+	/**
+	 * остнавная функция запроса в бд
+	 */
 	public function queryDateDb() {
 
 //		$_POST['to_date'] = "2017-01-01";
@@ -39,7 +42,7 @@ class ajaxClass
 				$arr_param['page'] = ($_POST['page'] - 1) * $_POST['count_record'];
 			}
 			$arr_param['count_record'] = $_POST['count_record'];
-			$response["pagination"] = $arr_pagination['view'];
+			$response["pagination"] = $arr_pagination;
 		} else {
 			$arr_param['page'] = 0;
 			$arr_param['count_record'] = $_POST['count_record'];
@@ -93,6 +96,14 @@ class ajaxClass
 		echo json_encode($response);
 	}
 
+	/**
+	 * функция погинации
+	 * @param $total_count общие количество позиций выборки
+	 * @param $count_record  число записей вывода на страницу
+	 * @param $page номен страници
+	 * @param $page_a действие для перелистывания блока
+	 * @return string строка html верстки погинации
+	 */
 	private function pagination($total_count, $count_record, $page, $page_a) {
 //		echo $page;
 //		die;
@@ -200,10 +211,7 @@ class ajaxClass
                         </ul>
                     </nav>
                 </div>';
-
-		return array(
-			'view' => $view,
-		);
+		return $view;
 	}
 
 

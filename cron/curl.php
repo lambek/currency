@@ -3,7 +3,12 @@ include_once "../db.php";
 
 header('Content-Type: text/html; charset=utf-8');
 //header('Content-Type: text/html; charset=windows-1251');
-
+/**
+ * функция курл
+ * @param $url
+ * @param bool $post
+ * @return bool|mixed
+ */
 function cURL($url, $post = false) {
 	if ($post) {
 		$post = json_encode($post);
@@ -51,6 +56,7 @@ function cURL($url, $post = false) {
 
 /**
  * Справочник по кодам валют
+ * @param $db
  */
 function currency_library($db) {
 	$currency_library = cURL("http://www.cbr.ru/scripts/XML_val.asp?d=0");
